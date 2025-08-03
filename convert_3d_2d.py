@@ -59,7 +59,8 @@ class Qwen2_5_VisionPatchEmbed_conv2d(nn.Module):
         E, C, T, H, W = conv3d_weight.shape
         assert C == self.in_channels
         assert T == self.temporal_patch_size
-        conv2d_weight = conv3d_weight.reshape(E, C * T, H, W)
+        # Match the channel order used when flattening the input tensor
+        conv2d_weight = conv3d_weight.permute(0, 2, 1, 3, 4).reshape(E, C * T, H, W)
         with torch.no_grad():
             self.proj.weight.copy_(conv2d_weight)
 
@@ -91,8 +92,11 @@ embed_dim = 1152
 
 model_conv3d = Qwen2_5_VisionPatchEmbed_conv3d(patch_size, temporal_patch_size, in_channels, embed_dim)
 model_conv2d = Qwen2_5_VisionPatchEmbed_conv2d(patch_size, temporal_patch_size, in_channels, embed_dim)
-# Simulate Conv3d weights and load them into Conv2d
+
+# Simulate Conv3d weights and use the same weights for both models
 conv3d_weight = torch.randn(embed_dim, in_channels, temporal_patch_size, patch_size, patch_size)
+with torch.no_grad():
+    model_conv3d.proj.weight.copy_(conv3d_weight)
 model_conv2d.load_conv3d_weight(conv3d_weight)
 
 # Input: [B*T, C, H, W] = [1*2, 3, 14, 14]
@@ -101,5 +105,4 @@ output_conv3d = model_conv3d(input_tensor)
 output_conv2d = model_conv2d(input_tensor)
 
 diff = np.abs(output_conv2d.data.cpu().numpy() - output_conv3d.data.cpu().numpy())
-
-print("...")
+print("max diff:", diff.max())
